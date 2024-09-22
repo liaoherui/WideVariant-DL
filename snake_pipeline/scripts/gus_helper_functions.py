@@ -6,6 +6,7 @@ Module containing helper scripts for GUS
 from Bio import SeqIO
 from itertools import compress
 import os
+import re
 import numpy as np
 import pickle
 import csv
@@ -14,12 +15,12 @@ import subprocess
 import gzip
 
 def read_samples_CSV(spls):
-    hdr_check = ['Path','Sample','FileName','Reference','Group','Outgroup']
+    hdr_check = ['Path','Sample','FileName','Reference','Group','Outgroup','Type']
     switch = "on"
     file = open(spls, 'r')
     #initialize lists
     list_path = []; list_splID = []; list_fileN = []; list_refG = []
-    list_group=[]; list_outgroup=[]
+    list_group=[]; list_outgroup=[]; list_seqtype=[]
     for line in file:
         line = line.strip('\n').split(',')
         # Test Header. Note: Even when header wrong code continues (w/ warning), but first line not read.
@@ -31,17 +32,18 @@ def read_samples_CSV(spls):
             switch = "off"
             continue
         # build lists
-        list_path.append(line[0])
-        list_splID.append(line[1])
-        list_fileN.append(line[2])
-        list_refG.append(line[3])
-        list_group.append(line[4])
-        list_outgroup.append(line[5])
+        list_path.append(line[0].strip())
+        list_splID.append(line[1].strip())
+        list_fileN.append(line[2].strip())
+        list_refG.append(line[3].strip())
+        list_group.append(line[4].strip())
+        list_outgroup.append(line[5].strip())
+        list_seqtype.append(line[6].strip())
 
-    return [list_path,list_splID,list_fileN,list_refG,list_group,list_outgroup]
+    return [list_path,list_splID,list_fileN,list_refG,list_group,list_outgroup,list_seqtype]
 
 
-def split_samplesCSV(PATH_ls,SAMPLE_ls,FILENAME_ls,REF_Genome_ls,GROUP_ls,OUTGROUP_ls):
+def split_samplesCSV(PATH_ls,SAMPLE_ls,FILENAME_ls,REF_Genome_ls,GROUP_ls,OUTGROUP_ls,TYPE_ls):
     '''Take info from samples.csv, concat by sample name & save each line as sample_info.csv in data/{sampleID}'''
     
     #Loop through unique samples
@@ -53,8 +55,9 @@ def split_samplesCSV(PATH_ls,SAMPLE_ls,FILENAME_ls,REF_Genome_ls,GROUP_ls,OUTGRO
         sample_references=list(compress(REF_Genome_ls,sample_info_bool))
         sample_groups=list(compress(GROUP_ls,sample_info_bool))
         sample_outgroups=list(compress(OUTGROUP_ls,sample_info_bool))
+        sample_type = list(compress(TYPE_ls, sample_info_bool))
         
-        sample_info_csv=list(zip(sample_paths,[sample]*sum(sample_info_bool),sample_filenames,sample_references,sample_groups,sample_outgroups))
+        sample_info_csv=list(zip(sample_paths,[sample]*sum(sample_info_bool),sample_filenames,sample_references,sample_groups,sample_outgroups,sample_type))
         
         # make data directory for this sample if it doesn't already exist
         if not(os.path.isdir('data/' + sample)):
@@ -84,20 +87,87 @@ def split_samplesCSV(PATH_ls,SAMPLE_ls,FILENAME_ls,REF_Genome_ls,GROUP_ls,OUTGRO
                     writer.writerow(row)
 
 
-def read_sample_info_CSV(path_to_sample_info_csv):
-    with open(path_to_sample_info_csv,'r') as f:
-        this_sample_info = f.readline() # only one line to read
-    this_sample_info = this_sample_info.strip('#').split(',')
-    path = this_sample_info[0] # remember python indexing starts at 0
-    paths = path.split(' ')
-    sample = this_sample_info[1]
-    filename = this_sample_info[2]
-    reference = this_sample_info[3]
-    
-    return paths, sample, reference, filename
 
+def findfastqfile(dr, smple, filename):
+    ##### Add by Herui - 20240921 - Modified function based on the codes from Evan
+    # Given the input path and filename, will return the fastq file (include SE, PE, different suffixs) Will gzip the file automatically.
+    file_suffixs = ['.fastq.gz', '.fq.gz', '.fastq', '.fq',
+                    '_001.fastq.gz', '_001.fq.gz', '_001.fastq', '_001.fq']
+    # Check whether the file is the soft link
+    target_f=[]
+    for f in glob.glob(f"{dr}/*"):
+        if not os.path.islink(f):
+            target_f.append(f)
+    #print('target...',target_f)
+    #exit()
+    # Search for filename as a prefix
+    files_F = [f for f in target_f if re.search(f"{filename}_?.*?R?1({'|'.join(file_suffixs)})", f)]
+    files_R = [f for f in target_f if re.search(f"{filename}_?.*?R?2({'|'.join(file_suffixs)})", f)]
+    #print(dr,smple,filename,glob.glob(f"{dr}/*"))
+    # Search for filename as a directory
+    file_F = []
+    file_R = []
+    if os.path.isdir(f"{dr}/{filename}"):
+        target_f = []
+        for f in glob.glob(f"{dr}/{filename}/*"):
+            if not os.path.islink(f):
+                target_f.append(f)
+        files_F = files_F + [f"{filename}/{f}" for f in target_f
+                             if re.search(f"{filename}/.*_?.*?R?1({'|'.join(file_suffixs)})", f)]
+        files_R = files_R + [f"{filename}/{f}" for f in target_f
+                             if re.search(f"{filename}/.*_?.*?R?2({'|'.join(file_suffixs)})", f)]
+    #print(files_F,files_R)
+    if len(files_F) == 0 and len(files_R) == 0:
+        # Can be single-end reads and no "1" or "2" ID in the filename
+        print(f'No file found in {dr} for sample {smple} with prefix {filename}! Go single-end checking!')
+        files_F = [f for f in target_f if re.search(f"{filename}.*_?.*({'|'.join(file_suffixs)})", f)]
 
-def findfastqfile(dr,ID,filename):
+        if os.path.isdir(f"{dr}/{filename}"):
+            files_F = files_F + [f"{filename}/{f}" for f in target_f if
+                                 re.search(f"{filename}/.*_?.*({'|'.join(file_suffixs)})", f)]
+        if len(files_F) == 0:
+            raise ValueError(f'No file found in {dr} for sample {smple} with prefix {filename}')
+        else:
+            file_F = files_F[0]
+            if not file_F.endswith('.gz'):
+                subprocess.run("gzip " + file_F, shell=True)
+                file_F += '.gz'
+        # print(files_F)
+
+    elif len(files_F) > 1 or len(files_R) > 1:
+        # print(",".join(files_F))
+        # print(",".join(files_R))
+        raise ValueError(f'More than 1 matching files found in {dr} for sample {smple} with prefix {filename}:\n \
+                         {",".join(files_F)}\n \
+                         {",".join(files_R)}')
+
+    elif len(files_F) == 1 and len(files_R) == 1:
+        file_F = files_F[0]
+        file_R = files_R[0]
+
+        ## Zip fastq files if they aren't already zipped
+        if not file_F.endswith('.gz'):
+            subprocess.run("gzip " + file_F, shell=True)
+            file_F += '.gz'
+        if not file_R.endswith('.gz'):
+            subprocess.run("gzip " + file_R, shell=True)
+            file_R += '.gz'
+    elif len(files_F) == 1 or len(files_R) == 1:
+        if len(files_F) == 1:
+            file_F = files_F[0]
+            if not file_F.endswith('.gz'):
+                subprocess.run("gzip " + file_F, shell=True)
+                file_F += '.gz'
+        if len(files_R) == 1:
+            file_T = files_R[0]
+            if not file_R.endswith('.gz'):
+                subprocess.run("gzip " + file_R, shell=True)
+                file_R += '.gz'
+    if file_R==[]:
+        file_R=''
+    return [file_F, file_R]
+
+def findfastqfile_old(dr,ID,filename):
     fwd=[]
     rev=[]
     #search for filename as directory first
@@ -146,7 +216,26 @@ def findfastqfile(dr,ID,filename):
     subprocess.run("gzip " + fwd, shell=True)   
     subprocess.run("gzip " + rev, shell=True)   
     return [fwd, rev]
-    
+
+
+def read_sample_info_CSV(path_to_sample_info_csv):
+    with open(path_to_sample_info_csv, 'r') as f:
+        this_sample_info = f.readline()  # only one line to read
+    this_sample_info = this_sample_info.strip('#').split(',')
+    path = this_sample_info[0]  # remember python indexing starts at 0
+    paths = path.split(' ')
+    sample = this_sample_info[1]
+    filename = this_sample_info[2]
+    reference = this_sample_info[3]
+    stype = this_sample_info[-1]
+    suff=findfastqfile(path,sample,filename)
+    #print(suff)
+    suff[0]=os.path.basename(suff[0])
+    suff[1]=os.path.basename(suff[1])
+    #print(suff)
+    #exit()
+
+    return paths, sample, reference, filename, stype,suff
 #Jonathan new code
 # def findfastqfile(dr,ID,filename):
 #     fwd=[]
