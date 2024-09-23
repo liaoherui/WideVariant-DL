@@ -8,6 +8,9 @@
 
 Git clone:<BR/>
 `git clone https://github.com/liaoherui/WideVariant-DL.git`<BR/>
+
+### For Snakemake pipeline
+
 `cd WideVariant-DL/snake_pipeline`<BR/>
 
 Build the conda environment:<BR/>
@@ -21,6 +24,10 @@ Activate the conda environment:<BR/>
 
 Build other conda environments required by snakemake:<BR/>
 `sh script/install_subenv.sh`<BR/>
+
+### For Local analysis module
+
+
 
 ## Overview
 
