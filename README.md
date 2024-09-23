@@ -10,6 +10,7 @@
 `cd WideVariant-DL`<BR/>
 `conda env create -f widevariant.yaml`<BR/>
 `conda activate widevariant`<BR/>
+`cd snake_pipeline`<BR/>
 `sh script/install_subenv.sh`<BR/>
 
 ## Overview
