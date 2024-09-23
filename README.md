@@ -2,9 +2,15 @@
 -------------------------------------------------
 
 ### Version: Vxxxx (update at 2024-09-19)
+-------------------------------------------------
 
 ## Install
 
+`git clone https://github.com/liaoherui/WideVariant-DL.git`<BR/>
+`cd WideVariant-DL`
+`conda env create -f widevariant.yaml`
+`conda activate widevariant`
+`sh script/install_subenv.sh`
 
 ## Overview
 
@@ -38,9 +44,14 @@ Step-1: run the python script: <BR/>
 
 `python widevariant.py -i <input_sample_info_csv> -r <ref_dir> -o <output_dir>`
 
+
 Step-2: run your slurm script.
 
 `sbatch script/run_snakemake.slurm`
+
+For dry-run, you can try:
+
+`sh script/dry-run.sh`
 
 
 ### 2. Local python analysis
