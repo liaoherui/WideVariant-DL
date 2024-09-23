@@ -1,4 +1,4 @@
-name: widevariant_github
+name: widevariant
 channels:
   - bioconda
   - conda-forge
