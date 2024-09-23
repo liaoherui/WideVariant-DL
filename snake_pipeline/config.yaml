@@ -27,7 +27,6 @@ cluster:
     --mem={resources.mem}
     --time={resources.time}
     --job-name="SM.{rule}"
-    --account=PAS2387
     --output="./logs/%j_{rule}.err.txt"
     --error="./logs/%j_{rule}.err.txt"
     --mail-user="UPDATE_EMAIL_ADDRESS"
