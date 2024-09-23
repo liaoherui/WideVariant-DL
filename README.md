@@ -7,10 +7,10 @@
 ## Install
 
 `git clone https://github.com/liaoherui/WideVariant-DL.git`<BR/>
-`cd WideVariant-DL`
-`conda env create -f widevariant.yaml`
-`conda activate widevariant`
-`sh script/install_subenv.sh`
+`cd WideVariant-DL`<BR/>
+`conda env create -f widevariant.yaml`<BR/>
+`conda activate widevariant`<BR/>
+`sh script/install_subenv.sh`<BR/>
 
 ## Overview
 
