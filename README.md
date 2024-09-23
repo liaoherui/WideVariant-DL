@@ -18,6 +18,8 @@ If the command above doesn't work, you may consider:<BR/>
 
 Activate the conda environment:<BR/>
 `conda activate widevariant`<BR/>
+
+Build other conda environments required by snakemake:<BR/>
 `sh script/install_subenv.sh`<BR/>
 
 ## Overview
