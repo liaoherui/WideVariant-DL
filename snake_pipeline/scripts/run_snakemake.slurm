@@ -5,7 +5,6 @@
 #SBATCH --mem=100GB
 #SBATCH -o mainout.txt
 #SBATCH -e mainerr.txt
-#SBATCH -A PAS2387
 #SBATCH --mail-user=YOUR_EMAIL_HERE
 #SBATCH --mail-type=ALL
 
