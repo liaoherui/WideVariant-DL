@@ -25,6 +25,9 @@ Activate the conda environment:<BR/>
 Build other conda environments required by snakemake:<BR/>
 `sh script/install_subenv.sh`<BR/>
 
+Change the permission of the file:<BR/>
+`chmod 777 slurm_status_script.py`<BR/>
+
 ### For Local analysis module
 
 
