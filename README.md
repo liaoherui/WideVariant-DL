@@ -65,13 +65,15 @@ Step-1: run the python script: <BR/>
 `python widevariant.py -i <input_sample_info_csv> -r <ref_dir> -o <output_dir>`
 
 
-Step-2: run your slurm script.
+Step-2: check the pipe using "dry-run"<BR/>
 
-`sbatch script/run_snakemake.slurm`
+`sh script/dry-run.sh`<BR/>
 
-For dry-run, you can try:
+Step-3: run your slurm script.<BR/>
 
-`sh script/dry-run.sh`
+`sbatch script/run_snakemake.slurm`<BR/>
+
+
 
 
 ### 2. Local python analysis
