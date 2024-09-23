@@ -8,7 +8,7 @@
 
 `git clone https://github.com/liaoherui/WideVariant-DL.git`<BR/>
 `cd WideVariant-DL/snake_pipeline`<BR/>
-`conda env create -n widevariant --file envs/widevariant.yaml`<BR/>
+`conda env create -n widevariant --file envs/widevariant.yaml` or `mamba env create -n widevariant --file envs/widevariant.yaml` <BR/>
 `conda activate widevariant`<BR/>
 `sh script/install_subenv.sh`<BR/>
 
