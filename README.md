@@ -1,4 +1,4 @@
-# WideVariant: Lieberman Lab SNP calling pipeline (New version with more features)
+# WideVariant: Lieberman Lab SNP calling pipeline (Local test version by Herui, adding more features)
 -------------------------------------------------
 
 ### Version: Vxxxx (update on 2024-09-19)
