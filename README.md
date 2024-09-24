@@ -14,10 +14,10 @@ Git clone:<BR/>
 `cd WideVariant-DL/snake_pipeline`<BR/>
 
 Build the conda environment:<BR/>
-`conda env create -n widevariant --file widevariant.yaml` or <BR/>`mamba env create -n widevariant --file widevariant.yaml` <BR/><BR/>
-If the command above doesn't work, you may consider:<BR/>
+`conda env create -n widevariant --file widevariant.yaml` or <BR/>`mamba env create -n widevariant --file widevariant.yaml` <BR/>
+<!--- If the command above doesn't work, you may consider:<BR/>
 `conda create -n widevariant snakemake biopython -y` or <BR/>
-`mamba create -n widevariant snakemake biopython -y` <BR/>
+`mamba create -n widevariant snakemake biopython -y` <BR/> --> 
 
 Activate the conda environment:<BR/>
 `conda activate widevariant`<BR/>
