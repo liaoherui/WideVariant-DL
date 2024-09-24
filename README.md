@@ -1,7 +1,7 @@
 # WideVariant: Lieberman Lab SNP calling pipeline (New version with more features)
 -------------------------------------------------
 
-### Version: Vxxxx (update at 2024-09-19)
+### Version: Vxxxx (update on 2024-09-19)
 -------------------------------------------------
 
 ## Install
