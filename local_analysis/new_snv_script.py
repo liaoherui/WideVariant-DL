@@ -60,19 +60,53 @@ Felix Key, Arolyn Conwill, A. Delphine Tripp, Evan Qu, Laura Markey, Chris Mancu
 # Import python packages
 import sys
 import os
+import re
+import copy
+import argparse
 import numpy as np
 import pandas as pd
 from scipy import stats
 import datetime, time
 
+
+# Some functions needed for subsequent steps
+def search_ref_name(refg):
+    pre=''
+    #fname=''
+    for filename in os.listdir(refg):
+        if re.search('fa',filename) or re.search('fna',filename):
+            pre=re.split('\.',filename)[0]
+
+            break
+    return pre
 # Import Lieberman Lab SNV-calling python package
-dir_py_scripts = "/Users/arolyn/Dropbox (MIT)/Postdoc/Research/PyPipeline/GitHub/local_analysis/modules" 
+script_dir = os.path.dirname(os.path.abspath(__file__))
+dir_py_scripts = script_dir+"/modules"
 sys.path.insert(0, dir_py_scripts)
-import snv_module_recoded as snv # SNV calling module
+import snv_module_recoded_new as snv # SNV calling module
+import build_SNP_Tree as bst
+import CNN_pred as cnn
 
 # Get timestamp
 ts = time.time() 
 timestamp = datetime.datetime.fromtimestamp(ts).strftime('%Y-%m-%d_%H-%M-%S') # used in output files
+
+parser=argparse.ArgumentParser(prog='Local analysis module of WideVariant',description='Apply filters and CNN to call SNPs for closely related bacterial isolates.')
+parser.add_argument('-i','--input_mat',dest='input_mat',type=str,required=True,help="The input mutation table in npz file")
+parser.add_argument('-c','--input_cov',dest='input_cov',type=str,help="The input coverage table in npz file")
+#parser.add_argument('-p','--input_pos',dest='input_pos',type=str,help="The input target positiosn file")
+parser.add_argument('-r','--rer',dest='ref_genome',type=str,help="The reference genome")
+parser.add_argument('-o','--output_dir',dest='output_dir',type=str,help="The output dir")
+#parser.add_argument('-o','--output_file',dest='output_file',type=str,help="The output file")
+args=parser.parse_args()
+input_mat=args.input_mat
+input_cov=args.input_cov
+#input_pos=args.input_pos
+refg=args.ref_genome
+odir=args.output_dir
+#Build
+if not os.path.exists(odir):
+    os.makedirs(odir)
 
 
 
@@ -82,29 +116,41 @@ timestamp = datetime.datetime.fromtimestamp(ts).strftime('%Y-%m-%d_%H-%M-%S') # 
 
 
 #%% Dataset info
-
-dataset_name = 'Escherichia_coli_P-11'
-data_file_cmt = 'data/group_1_candidate_mutation_table.pickle.gz'
-data_file_cov = 'data/group_1_coverage_matrix_raw.pickle.gz'
-dir_ref_genome = 'ref_genomes/Escherichia_coli_P-11-001'
-ref_genome_name = 'Escherichia_coli_P-11-001'
+dataset_name= 'Your-InputData'
+data_file_cmt=input_mat
+data_file_cov = input_cov
+dir_ref_genome = refg
+ref_genome_name = search_ref_name(refg)
+#dir_ref_genome = refg+'/'+fname
 samples_to_exclude = [] # option to exclude specific samples manually
 
+
 # Make subdirectory for this dataset
-dir_output = 'output'
+#dir_output = 'output_elife-sau'
+dir_output=odir
 os.system( "mkdir " + dir_output );
 
 
+################ Run CNN first and then combine the result of CNN and default filters ######
+
+####### Run CNN ########
+cnn_pos,cnn_pred,cnn_prob=cnn.CNN_predict(data_file_cmt,data_file_cov,odir) # The label is predicted by CNN
+dlab=dict(zip(cnn_pos,cnn_pred)) # pos -> label
+dprob=dict(zip(cnn_pos,cnn_prob)) # pos -> probability
+#######  Done  #########
+#exit()
 
 #%% Generate candidate mutation table object
 
 # Import candidate mutation table data generated in Snakemake
 
 # Use this version for updated candidate mutation table matrices
-[quals,p,counts,in_outgroup,sampleNames,indel_counter] = \
-    snv.read_candidate_mutation_table_npz(cmtFile) 
+[quals,p,counts,in_outgroup,sample_names,indel_counter] = \
+    snv.read_candidate_mutation_table_npz(data_file_cmt) 
 
-
+#dx=np.where(p==832924)
+#print(counts[:,dx,:])
+#exit()
 # # Use this version for old candidate mutation table matrices
 # [quals,p,counts,in_outgroup,sample_names,indel_counter] = \
 #     snv.read_old_candidate_mutation_table_pickle_gzip( data_file_cmt ) 
@@ -118,16 +164,20 @@ my_cmt = snv.cmt_data_object( sample_names,
                              quals, 
                              indel_counter 
                              )
-
+#print(counts[:,0,:8])
 
 #%% Import reference genome information
 
 # Create instance of reference genome class
+#print(dir_ref_genome)
+#exit()
 my_rg = snv.reference_genome_object( dir_ref_genome )
+#exit()
 my_rg_annot = my_rg.annotations
+#print(my_rg_annot)
 my_rg_annot_0 = my_rg_annot[0]
 
-
+#exit()
 
 #%% Process raw coverage matrix
 
@@ -156,6 +206,16 @@ samples_to_exclude_bool = np.array( [x in samples_to_exclude for x in my_cmt.sam
 my_cmt.filter_samples( ~samples_to_exclude_bool )
 my_cov.filter_samples( ~samples_to_exclude_bool )
 
+######################
+## Dicts For Table  ##
+######################
+# dpt is used to keep the result of filters
+dpt={} # dict used to keep information of identified SNPs. e.g d->pos -> {"cov_filter": 1,"qual_filter":1,...... }
+#### We can't cause there are multiple samples for each position
+# dft is used to keep the value of fwd reads
+#dft={} # e.g. pos -> {"cov":3,"qual":30,...}
+# drt is used to keep the value of rev reads
+#drt={} # e.g. pos -> {"cov":3,"qual":30,...}
 
 
 #%%###################
@@ -167,14 +227,15 @@ my_cov.filter_samples( ~samples_to_exclude_bool )
 
 # Create instance of basecalls class for initial calls
 my_calls = snv.calls_object( my_cmt )
+#my_calls_raw = snv.calls_object( my_cmt )
 
 
 #%% Filter parameters
 
 # Remove samples that are not high quality
 filter_parameter_sample_across_sites = {
-                                        'min_average_coverage_to_include_sample': 10, # remove samples that have low coverage
-                                        'max_frac_Ns_to_include_sample': 0.2 # remove samples that have too many undefined base (ie. N).
+                                        'min_average_coverage_to_include_sample': 0, # remove samples that have low coverage # default: 10
+                                        'max_frac_Ns_to_include_sample': 1 # remove samples that have too many undefined base (ie. N). # default: 0.2
                                         }
 
 # Remove sites within samples that are not high quality
@@ -187,7 +248,7 @@ filter_parameter_site_per_sample = {
 
 # Remove sites across samples that are not high quality
 filter_parameter_site_across_samples = {
-                                        'max_fraction_ambigious_samples' : 0.25, # across samples per position, the fraction of samples that can have undefined bases
+                                        'max_fraction_ambigious_samples' : 1, # across samples per position, the fraction of samples that can have undefined bases
                                         'min_median_coverage_position' : 5, # across samples per position, the median coverage
                                         'max_mean_copynum' : 4, # mean copy number at a positions across all samples
                                         'max_max_copynum' : 7 # max maximum copynumber that a site can have across all samples
@@ -204,6 +265,8 @@ filter_parameter_site_across_samples = {
     True, 
     dir_output 
     )
+#print(low_cov_samples)
+#exit()
 
 # Filter candidate mutation table, coverage, and calls objects
 my_cmt.filter_samples( goodsamples_coverage )
@@ -212,8 +275,17 @@ my_calls.filter_samples( goodsamples_coverage )
 
 
 #%% Filter calls per position per sample
+#print(my_cmt.p)
+#print(my_calls.calls.T)
+#print(my_cmt.fwd_cov.T)
+#print(my_cmt.rev_cov.T)
+#print(my_cmt)
+
+#print('---------')
+#print(my_calls.calls.T.shape)
 
 # Filter based on coverage
+my_calls_raw=copy.deepcopy(my_calls)
 
 my_calls.filter_calls_by_element( 
     my_cmt.fwd_cov < filter_parameter_site_per_sample['min_cov_per_strand_for_call'] 
@@ -222,19 +294,42 @@ my_calls.filter_calls_by_element(
 my_calls.filter_calls_by_element( 
     my_cmt.rev_cov < filter_parameter_site_per_sample['min_cov_per_strand_for_call'] 
     ) # reverse strand coverage too low
+tokens = snv.token_generate(my_calls_raw.calls.T, my_calls.calls.T, 'filter-coverage')
+dpt['cov']=dict(zip(my_calls.p,tokens))
+#print(my_cmt.quals.shape)
+#exit()
+#print(my_cmt.p,len(tokens))
+#print(dpt)
+#exit()
+#print(my_calls.calls.T)
+#print(my_calls_raw.calls.T)
+#print(np.array_equal(my_calls.calls,my_calls_raw.calls) )
+#unequal_mask = my_calls.calls != my_calls_raw.calls
+#print(unequal_mask)
+#exit()
+
+#print('---------')
 
 # Filter based on quality
-
+my_calls_raw=copy.deepcopy(my_calls)
 my_calls.filter_calls_by_element( 
     my_cmt.quals < filter_parameter_site_per_sample['min_qual_for_call'] 
     ) # quality too low
 
+tokens = snv.token_generate(my_calls_raw.calls.T, my_calls.calls.T, 'filter-qual')
+dpt['qual']=dict(zip(my_calls.p,tokens))
+#exit()
+#print(my_calls.p)
+#print(my_calls.calls.T)
+#print(my_calls.calls.T.shape)
+#exit()
 # Filter based on major allele frequency
-
+my_calls_raw=copy.deepcopy(my_calls)
 my_calls.filter_calls_by_element( 
     my_cmt.major_nt_freq < filter_parameter_site_per_sample['min_major_nt_freq_for_call'] 
     ) # major allele frequency too low
-
+tokens = snv.token_generate(my_calls_raw.calls.T, my_calls.calls.T, 'filter-major allele freq')
+dpt['maf']=dict(zip(my_calls.p,tokens))
 
 #%% Filter positions with indels
 
@@ -243,41 +338,56 @@ with np.errstate(divide='ignore',invalid='ignore'):
     frac_reads_supporting_indel = np.sum(my_cmt.indel_stats,axis=2)/my_cmt.coverage # sum reads supporting insertion plus reads supporting deletion
     frac_reads_supporting_indel[ ~np.isfinite(frac_reads_supporting_indel) ] = 0
     # note: this fraction can be above zero beacuse the number of reads supporting an indel includes a +/-3 bp window around a given position on the genome
+my_calls_raw=copy.deepcopy(my_calls)
 my_calls.filter_calls_by_element( 
     frac_reads_supporting_indel > filter_parameter_site_per_sample['max_frac_reads_supporting_indel'] 
     ) # too many reads supporting indels
-
+tokens = snv.token_generate(my_calls_raw.calls.T, my_calls.calls.T, 'filter-indel')
+dpt['indel']=dict(zip(my_calls.p,tokens))
 
 #%% Filter positions that look iffy across samples
-
+my_calls_raw=copy.deepcopy(my_calls)
 my_calls.filter_calls_by_position( 
     my_calls.get_frac_Ns_by_position() > filter_parameter_site_across_samples['max_fraction_ambigious_samples'] 
     ) # too many samples with ambiuguous calls at this position
+tokens = snv.token_generate(my_calls_raw.calls.T, my_calls.calls.T, 'filter-max_fraction_ambigious_samples')
+dpt['mfas']=dict(zip(my_calls.p,tokens))
+
 snv.filter_histogram( 
     my_calls.get_frac_Ns_by_position(), 
     filter_parameter_site_across_samples['max_fraction_ambigious_samples'], 
     'Fraction Ns by position'
     )
 
+my_calls_raw=copy.deepcopy(my_calls)
 my_calls.filter_calls_by_position( 
     np.median( my_cmt.coverage, axis=0 ) < filter_parameter_site_across_samples['min_median_coverage_position'] 
     ) # insufficient median coverage across samples at this position
+tokens = snv.token_generate(my_calls_raw.calls.T, my_calls.calls.T, 'filter-min_median_coverage_position')
+dpt['mmcp']=dict(zip(my_calls.p,tokens))
 # # Optional code to make a histogram
 # snv.filter_histogram( 
 #     np.median( my_cmt.coverage, axis=0 ), 
 #     filter_parameter_site_across_samples['min_median_coverage_position'], 
 #     'Median coverage by position'
 #     )
-
+my_calls_raw=copy.deepcopy(my_calls)
 copy_number_per_sample_per_pos = my_cmt.coverage / np.expand_dims( my_cov.get_median_cov_of_chromosome(), 1) # compute copy number
 copy_number_avg_per_pos = np.mean( copy_number_per_sample_per_pos, axis=0 ) # mean copy number at each position
+copy_number_avg_per_pos[np.isnan(copy_number_avg_per_pos)]=0
 my_calls.filter_calls_by_position( 
     copy_number_avg_per_pos > filter_parameter_site_across_samples['max_mean_copynum'] 
     ) # average copy number too high
 copy_number_max_per_pos = np.max( copy_number_per_sample_per_pos, axis=0 ) # mean copy number at each position
+copy_number_max_per_pos[np.isnan(copy_number_max_per_pos)]=0
 my_calls.filter_calls_by_position( 
     copy_number_max_per_pos > filter_parameter_site_across_samples['max_max_copynum'] 
     ) # average copy number too high
+tokens = snv.token_generate(my_calls_raw.calls.T, my_calls.calls.T, 'filter-copy number')
+dpt['cpn']=dict(zip(my_calls.p,tokens))
+#print(my_calls.p.shape)
+#print(my_calls.p)
+#exit()
 # # Optional code to make a histogram
 # snv.filter_histogram( 
 #     copy_number_avg_per_pos, 
@@ -285,10 +395,10 @@ my_calls.filter_calls_by_position(
 #     'Average copy number by position'
 #     )
 
-
 #%% Filter samples that have too many ambiguous calls
 
 # Identify samples with many ambiguous basecalls and make a histogram
+
 pos_to_consider = my_calls.p[ np.any(  my_calls.calls, axis=0 ) ] # mask positions with no basecalls in any samples
 [ samples_with_toomanyNs, goodsamples_nonambig ] = snv.filter_samples_by_ambiguous_basecalls( 
     my_calls.get_frac_Ns_by_sample( pos_to_consider ), 
@@ -298,12 +408,19 @@ pos_to_consider = my_calls.p[ np.any(  my_calls.calls, axis=0 ) ] # mask positio
     True, 
     dir_output 
     )
+#print(len(pos_to_consider))
+#print(my_calls.get_frac_Ns_by_sample( pos_to_consider ))
+#print(my_calls.sample_names)
+#print(samples_with_toomanyNs)
+#exit()
 
+#print(my_cmt.p.shape)
 # Filter candidate mutation table, coverage, and calls objects
-my_cmt.filter_samples( goodsamples_nonambig )
-my_cov.filter_samples( goodsamples_nonambig )
-my_calls.filter_samples( goodsamples_nonambig )
-
+#my_cmt.filter_samples( goodsamples_nonambig )
+#my_cov.filter_samples( goodsamples_nonambig )
+#my_calls.filter_samples( goodsamples_nonambig )
+#print(my_cmt.p.shape)
+#exit()
 
 
 #%%##########################
@@ -381,6 +498,10 @@ filter_parameter_recombination = {
     filter_parameter_recombination['corr_threshold_recombination'], \
     True, dir_output \
     )
+
+#print(recombo_bool.shape,my_calls.p.shape)
+dpt['recomb']=dict(zip(my_calls.p,recombo_bool))
+#exit()
     
 # Save positions with likely recombination
 if len(p_recombo)>0:
@@ -405,15 +526,61 @@ fixedmutation = \
     & filter_SNVs_quals_not_NaN \
     & filter_SNVs_not_recombo # boolean
 
+#print(fixedmutation.shape)
+#exit()
+
 hasmutation = np.any( fixedmutation, axis=0) # boolean over positions (true if at lest one sample has a mutation at this position)
 
 goodpos_bool = np.any( fixedmutation, axis=0 )
+#print(goodpos_bool.shape)
+#exit()
 goodpos_idx = np.where( goodpos_bool )[0]
+#print(goodpos_idx)
+tokens_final=snv.generate_tokens_last(tokens,goodpos_idx,'filter-fixedmutation')
+dpt['fix']=dict(zip(my_calls.p,tokens_final))
+#exit()
 num_goodpos = len(goodpos_idx)
+print('Num mutations identified by WideVariant: '+str(num_goodpos))
 
-print('Num mutations: '+str(num_goodpos))
+####### Combine CNN and WideVariant output and generate the SNV information table #######
+goodpos_idx_cnn=cnn_pos[np.where(cnn_pred==1)]
+#print(goodpos_idx_cnn)
+#exit()
+goodpos_idx_wd=my_calls.p[goodpos_idx]
+all_p=np.sort(np.union1d(goodpos_idx_cnn,goodpos_idx_wd))
+#all_p=my_calls.p[all_p]
+#print(all_p)
+#print(np.where(my_cmt.p==1095218))
+#exit()
+goodpos_bool,goodpos_bool_all=snv.generate_cnn_filter_table(all_p,goodpos_idx_wd,dpt,dlab,dprob,dir_output,my_cmt.p)
+goodpos_idx = np.where( goodpos_bool )[0]
+#print(goodpos_bool.shape)
+#exit()
+#print(goodpos_bool,goodpos_bool.shape)
+#print(goodpos_idx)
+#exit()
+goodpos_idx_all = np.where( goodpos_bool_all)[0]
+num_goodpos = len(goodpos_idx)
+num_goodpos_all = len(goodpos_idx_all)
+print('Num mutations identified by CNN+WideVariant+Recomb_filt: '+str(num_goodpos_all))
+print('Num mutations identified by CNN+Recomb_filt:'+str(num_goodpos))
 
-
+#exit()
+#pos_to_consider = my_calls.p[ np.any(  my_calls.calls, axis=0 ) ] # mask positions with no basecalls in any samples
+'''
+[ samples_with_toomanyNs, goodsamples_nonambig ] = snv.filter_samples_by_ambiguous_basecalls(
+    my_calls.get_frac_Ns_by_sample( goodpos_idx ),
+    filter_parameter_sample_across_sites['max_frac_Ns_to_include_sample'],
+    my_calls.sample_names,
+    my_calls.in_outgroup, # does not filter outgroup samples!!!
+    True,
+    dir_output
+    )
+print(my_calls.sample_names)
+print(my_calls.get_frac_Ns_by_sample( goodpos_idx ))
+print(samples_with_toomanyNs)
+exit()
+'''
 
 #%% Make and annotate a SNV table
 
@@ -433,6 +600,23 @@ p_goodpos = my_calls_goodpos.p
 
 calls_ancestral_goodpos = calls_ancestral[ goodpos_bool ]
 
+# Only for bar charts
+my_cmt_goodpos_all = my_cmt.copy()
+#print(np.where(my_cmt.p==1095218))
+#print(goodpos_bool_all[np.where(my_cmt.p==1095218)[0]])
+my_cmt_goodpos_all.filter_positions( goodpos_bool_all )
+#print(my_cmt_goodpos_all.p)
+#exit()
+my_cmt_goodpos_ingroup_all = my_cmt_goodpos_all.copy()
+my_cmt_goodpos_ingroup_all.filter_samples( np.logical_not( my_cmt_goodpos_ingroup_all.in_outgroup ) )
+
+my_calls_goodpos_all= my_calls.copy()
+my_calls_goodpos_all.filter_positions( goodpos_bool_all )
+calls_goodpos_all = my_calls_goodpos_all.calls
+calls_goodpos_ingroup_all = calls_goodpos_all[ np.logical_not( my_calls_goodpos_all.in_outgroup ),: ]
+p_goodpos_all = my_calls_goodpos_all.p
+#calls_ancestral_goodpos = calls_ancestral[ goodpos_bool_all ]
+
 # Generate SNV table
 
 # Parameters
@@ -441,12 +625,12 @@ promotersize = 250; # how far upstream of the nearest gene to annotate something
 # Make a table (pandas dataframe) of SNV positions and relevant annotations
 mutations_annotated = snv.annotate_mutations( \
     my_rg, \
-    p_goodpos, \
-    np.tile( calls_ancestral[goodpos_idx], (my_cmt_goodpos_ingroup.num_samples,1) ), \
-    calls_goodpos_ingroup, \
-    my_cmt_goodpos_ingroup, \
-    fixedmutation[:,goodpos_idx], \
-    mut_qual[:,goodpos_bool].flatten(), \
+    p_goodpos_all, \
+    np.tile( calls_ancestral[goodpos_idx_all], (my_cmt_goodpos_ingroup_all.num_samples,1) ), \
+    calls_goodpos_ingroup_all, \
+    my_cmt_goodpos_ingroup_all, \
+    fixedmutation[:,goodpos_idx_all], \
+    mut_qual[:,goodpos_bool_all].flatten(), \
     promotersize \
     ) 
 
@@ -458,19 +642,24 @@ mutations_annotated = snv.annotate_mutations( \
 # convinced that your filters are strict enough to filter low-quality SNVs, but
 # not so strict that good SNVs are eliminated as well. 
 
+
+#print(p_goodpos_all)
+#exit()
 # Clickable bar charts for each SNV position
+
 snv.plot_interactive_scatter_barplots( \
-    p_goodpos, \
-    mut_qual[0,goodpos_idx], \
+    p_goodpos_all, \
+    mut_qual[0,goodpos_idx_all], \
     'pos', \
     'qual', \
-    my_cmt_goodpos.sample_names, \
+    my_cmt_goodpos_all.sample_names, \
     mutations_annotated, \
-    my_cmt_goodpos.counts )
+    my_cmt_goodpos_all.counts,dir_output,False)
 
+#exit()
 # Heatmaps of basecalls, coverage, and quality over SNV positions
 if num_goodpos>0:
-    snv.make_calls_qc_heatmaps( my_cmt_goodpos, my_calls_goodpos, True, dir_output )
+    snv.make_calls_qc_heatmaps( my_cmt_goodpos, my_calls_goodpos, True, dir_output,False )
 
 
 
@@ -484,12 +673,13 @@ if num_goodpos>0:
 
 # Choose subset of samples or positions to use in the tree by idx
 samplestoplot = np.arange(my_cmt_goodpos.num_samples) # default is to use all samples 
-goodpos4tree = np.arange(num_goodpos) # default is to use all positions 
+goodpos4tree = np.arange(num_goodpos) # default is to use all positions
+#print(goo)
 
 # Get calls for tree
 my_calls_tree = snv.calls_object( my_cmt_goodpos ) # re-initialize calls
 
-# Apply looser filters than befor (want as many alleles as possible)
+# Apply looser filters than before (want as many alleles as possible)
 filter_parameter_calls_for_tree = {
                                     'min_cov_for_call' : 5, # on individual samples, calls must have at least this many fwd+rev reads
                                     'min_qual_for_call' : 30, # on individual samples, calls must have this minimum quality score
@@ -510,32 +700,33 @@ my_calls_tree.filter_calls_by_element(
 
 # Make QC plots again using calls for the tree
 if num_goodpos>0:
-    snv.make_calls_qc_heatmaps( my_cmt_goodpos, my_calls_tree, False, dir_output ) 
+    snv.make_calls_qc_heatmaps( my_cmt_goodpos, my_calls_tree, False, dir_output, False )
 
+# %% Make a tree
 
-
-#%% Make a tree
-
-if num_goodpos>0:
+if num_goodpos > 0:
 
     # Get nucleotides of basecalls (ints to NTs)
-    calls_for_treei = my_calls_tree.calls[ np.ix_(samplestoplot,goodpos4tree) ] # numpy broadcasting of row_array and col_array requires np.ix_()
-    calls_for_tree = snv.ints2nts(calls_for_treei) # NATCG translation
-    
+    calls_for_treei = my_calls_tree.calls[
+        np.ix_(samplestoplot, goodpos4tree)]  # numpy broadcasting of row_array and col_array requires np.ix_()
+    calls_for_tree = snv.ints2nts(calls_for_treei)  # NATCG translation
+
     # Sample names for tree
     treesampleNamesLong = my_cmt_goodpos.sample_names
     for i, samplename in enumerate(treesampleNamesLong):
         if not samplename[0].isalpha():
-            treesampleNamesLong[i]='S'+treesampleNamesLong[i] # sample names are modified to make parsing easier downstream
-    sampleNamesDnapars = [ "{:010d}".format(i) for i in range(my_cmt_goodpos.num_samples)]
-    
-    # Add inferred ancestor and reference 
-    calls_ancestral_for_tree =  np.expand_dims( snv.ints2nts(calls_ancestral_goodpos), axis=0 )
-    calls_reference_for_tree = np.expand_dims( my_rg.get_ref_NTs( my_calls_tree.p ), axis=0 )
-    calls_for_tree_all = np.concatenate( (calls_ancestral_for_tree,calls_reference_for_tree,calls_for_tree) ,axis=0) # first column now outgroup_nts; outgroup_nts[:, None] to make ndims (2) same for both
-    sampleNamesDnapars_all = np.append([ 'Sanc','Sref' ],sampleNamesDnapars)
-    treesampleNamesLong_all = np.append([ 'inferred_ancestor','reference_genome' ],treesampleNamesLong) 
-    
+            treesampleNamesLong[i] = 'S' + treesampleNamesLong[
+                i]  # sample names are modified to make parsing easier downstream
+    sampleNamesDnapars = ["{:010d}".format(i) for i in range(my_cmt_goodpos.num_samples)]
+
+    # Add inferred ancestor and reference
+    calls_ancestral_for_tree = np.expand_dims(snv.ints2nts(calls_ancestral_goodpos), axis=0)
+    calls_reference_for_tree = np.expand_dims(my_rg.get_ref_NTs(my_calls_tree.p), axis=0)
+    calls_for_tree_all = np.concatenate((calls_ancestral_for_tree, calls_reference_for_tree, calls_for_tree),
+                                        axis=0)  # first column now outgroup_nts; outgroup_nts[:, None] to make ndims (2) same for both
+    sampleNamesDnapars_all = np.append(['Sanc', 'Sref'], sampleNamesDnapars)
+    treesampleNamesLong_all = np.append(['inferred_ancestor', 'reference_genome'], treesampleNamesLong)
+
     # Build tree
     snv.generate_tree( \
         calls_for_tree_all.transpose(), \
@@ -543,7 +734,7 @@ if num_goodpos>0:
         sampleNamesDnapars_all, \
         ref_genome_name, \
         dir_output, \
-        "snv_tree_"+ref_genome_name, \
+        "snv_tree_" + ref_genome_name, \
         buildTree='PS' \
         )
 
@@ -560,7 +751,8 @@ if num_goodpos>0:
 
 # Make table
 if num_goodpos>0:
-    output_tsv_filename = dir_output + '/' + 'snv_table_mutations_annotations.tsv'
+    # This is the raw mutation table - only contain positions identified by CNN and are not recombinations
+    output_tsv_filename = dir_output + '/' + 'snv_table_mutations_annotations_raw.tsv'
     snv.write_mutation_table_as_tsv( \
         p_goodpos, \
         mut_qual[0,goodpos_idx], \
@@ -569,9 +761,28 @@ if num_goodpos>0:
         calls_for_tree, \
         treesampleNamesLong, \
         output_tsv_filename \
+        
         )
+    out_merge_tsv=dir_output+'/snv_table_merge_all_mut_annotations.tsv'
+    snv.merge_two_tables(dir_output+'/snv_table_cnn_plus_filter.txt',output_tsv_filename,out_merge_tsv)
+    snv.generate_html_with_thumbnails(dir_output+'/snv_table_merge_all_mut_annotations.tsv', dir_output+'/snv_table_with_charts_final.html', dir_output+'/bar_charts')
+    # Generate the tree for each identified SNPs
+    bst.mutationtypes(dir_output+"/snv_tree_genome_latest.nwk.tree",dir_output+'/snv_table_merge_all_mut_annotations.tsv',dir_output)
+    # # Contain all positions identified by CNN or WideVariant - even those false positions
+    # snv.write_mutation_table_as_tsv( \
+    #     p_goodpos_all, \
+    #     mut_qual[0, goodpos_idx_all], \
+    #     my_cmt_goodpos_all.sample_names, \
+    #     mutations_annotated, \
+    #     calls_for_tree, \
+    #     treesampleNamesLong_all, \
+    #     output_tsv_filename \
+    #     )
 
-    
+#exit()
+
+
+
 #%% Write table of tree distances to a csv file
 
 if num_goodpos>0:
@@ -621,7 +832,7 @@ with open( dir_output + '/snv_table_simple_stats.csv', 'w') as f:
 
 #%% Make a plot of presence/absence of each contig
 
-my_cov.plot_heatmap_contig_copy_num( dir_output )
+my_cov.plot_heatmap_contig_copy_num( dir_output ,False)
 
 # Record data in files
 snv.write_generic_csv( my_cov.median_coverage_by_contig, my_cov.contig_names, my_cov.sample_names, dir_output+'/contig_table_median_coverage.csv' )
@@ -633,6 +844,6 @@ snv.write_generic_csv( my_cov.copy_number_by_contig, my_cov.contig_names, my_cov
 if type(my_cov) == snv.cov_data_object:
     for contig_num in np.linspace(1,my_cov.num_contigs,my_cov.num_contigs).astype(int):
         print('Generating copy number traces for contig ' + str(contig_num) + '...')
-        my_cov.make_coverage_trace(contig_num,100,dir_output);
+        my_cov.make_coverage_trace(contig_num,100,dir_output,False);
 elif type(my_cov) == snv.cov_data_object_simple:
     print('Coverage matrix object type is cov_data_obj_simple, not cov_data_obj. Raw coverage matrix not available for copy number traces.')
