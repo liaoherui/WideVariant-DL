@@ -260,7 +260,7 @@ def remove_lp(combined_array,inp,my_cmt,my_calls, median_cov ):
     #exit()
     if np.median(median_cov)>9:
         my_calls.filter_calls_by_element(
-            (my_cmt.rev_cov == 1 ) & (my_cmt.fwd_cov==1)
+            ((my_cmt.rev_cov == 1 ) & (my_cmt.fwd_cov==1)) | ((my_cmt.rev_cov == 1 ) & (my_cmt.fwd_cov<4)) | ((my_cmt.rev_cov < 4 ) & (my_cmt.fwd_cov==1))
         )
 
     #print(combined_array.shape)
