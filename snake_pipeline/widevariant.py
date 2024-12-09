@@ -122,6 +122,8 @@ def process_input_sfile(infile,uid):
 		if not line:break
 		ele=re.split(',',line)
 		files=findfastqfile(ele[0], ele[1], ele[2])
+		if os.path.exists('data/'+ele[1]):
+			os.system('rm -rf data/'+ele[1])
 		abspath=os.path.abspath(ele[0])
 		if pre_check:
 			newpath1=abspath+'/'+ele[2]+'_1.fastq.gz'
