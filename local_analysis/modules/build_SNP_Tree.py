@@ -4,6 +4,7 @@ edited August 2013 to just generate .tree files
 """
 
 import os
+import re
 import sys
 import numpy as np
 import pandas as pd
