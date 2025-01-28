@@ -1,4 +1,4 @@
-# WideVariant: Lieberman Lab SNP calling pipeline (Local test version by Herui, adding more features)
+# High-accuracy SNV calling for bacterial isolates using AccuSNV (Local test version by Herui)
 -------------------------------------------------
 
 ### Version: Vxxxx (update on 2024-09-19)
